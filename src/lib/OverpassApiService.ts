@@ -31,7 +31,11 @@ export class OverpassApiService {
     const url = `https://overpass-api.de/api/interpreter`;
     const response = await fetch(url, {
       method: 'POST',
-      body: query
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+      },
+      body: `data=${encodeURIComponent(query)}`
     });
     
     if (!response.ok) {

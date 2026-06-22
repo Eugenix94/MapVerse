@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { ExtractedGeoData } from '../lib/OverpassApiService';
+import type { ElevationData } from '../lib/ElevationService';
 import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import Scene3D from './Scene3D';
@@ -8,10 +9,11 @@ import * as turf from '@turf/turf';
 interface EditorWorkspaceProps {
   geoData: ExtractedGeoData;
   projectBounds: GeoJSON.Feature<GeoJSON.Polygon>;
+  elevationData: ElevationData;
   onClose: () => void;
 }
 
-const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ geoData, projectBounds, onClose }) => {
+const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ geoData, projectBounds, elevationData, onClose }) => {
   const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
 
   const bbox = turf.bbox(projectBounds);
@@ -81,7 +83,12 @@ const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ geoData, projectBound
             />
           </MapContainer>
         ) : (
-          <Scene3D geoData={geoData} center={[centerLon, centerLat]} bbox={bbox as [number, number, number, number]} />
+          <Scene3D 
+            geoData={geoData} 
+            center={[centerLon, centerLat]} 
+            bbox={bbox as [number, number, number, number]} 
+            elevationData={elevationData}
+          />
         )}
       </div>
     </div>

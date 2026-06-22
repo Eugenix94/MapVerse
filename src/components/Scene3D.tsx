@@ -4,15 +4,32 @@ import { OrbitControls, Sky, useTexture } from '@react-three/drei';
 import { Suspense } from 'react';
 import * as THREE from 'three';
 import type { ExtractedGeoData } from '../lib/OverpassApiService';
+import type { ElevationData } from '../lib/ElevationService';
+import { ElevationService } from '../lib/ElevationService';
 import * as d3 from 'd3-geo';
+import * as turf from '@turf/turf';
 
 interface Scene3DProps {
   geoData: ExtractedGeoData;
   center: [number, number]; // [lon, lat]
   bbox: [number, number, number, number];
+  elevationData: ElevationData;
 }
 
-const BuildingMesh = ({ feature, projection }: { feature: any; projection: d3.GeoProjection }) => {
+const BuildingMesh = ({ feature, projection, elevationData, bbox }: { feature: any; projection: d3.GeoProjection; elevationData: ElevationData; bbox: [number, number, number, number] }) => {
+  const center = useMemo(() => {
+    try {
+        const centerPoint = turf.center(feature);
+        return centerPoint.geometry.coordinates as [number, number];
+    } catch (e) {
+        return feature.geometry.coordinates[0][0] as [number, number];
+    }
+  }, [feature]);
+
+  const baseElevation = useMemo(() => {
+    return ElevationService.getInterpolatedElevation(center[0], center[1], bbox, elevationData);
+  }, [center, bbox, elevationData]);
+
   const geometry = useMemo(() => {
     if (!feature.geometry) return null;
     
@@ -56,7 +73,7 @@ const BuildingMesh = ({ feature, projection }: { feature: any; projection: d3.Ge
   if (!geometry) return null;
 
   return (
-    <mesh geometry={geometry}>
+    <mesh geometry={geometry} position={[0, baseElevation, 0]}>
       <meshStandardMaterial color="#eeeeee" roughness={0.8} />
       <lineSegments>
         <edgesGeometry args={[geometry]} />
@@ -66,7 +83,7 @@ const BuildingMesh = ({ feature, projection }: { feature: any; projection: d3.Ge
   );
 };
 
-const RoadMesh = ({ feature, projection }: { feature: any; projection: d3.GeoProjection }) => {
+const RoadMesh = ({ feature, projection, elevationData, bbox }: { feature: any; projection: d3.GeoProjection; elevationData: ElevationData; bbox: [number, number, number, number] }) => {
     // Simple road rendering as lines for MVP
     const geometry = useMemo(() => {
         if (!feature.geometry || feature.geometry.type !== 'LineString') return null;
@@ -75,7 +92,8 @@ const RoadMesh = ({ feature, projection }: { feature: any; projection: d3.GeoPro
         feature.geometry.coordinates.forEach((coord: number[]) => {
             const projected = projection(coord as [number, number]);
             if (projected) {
-                points.push(new THREE.Vector3(projected[0], 0.1, -projected[1]));
+                const elev = ElevationService.getInterpolatedElevation(coord[0], coord[1], bbox, elevationData);
+                points.push(new THREE.Vector3(projected[0], elev + 0.5, -projected[1]));
             }
         });
         
@@ -89,7 +107,7 @@ const RoadMesh = ({ feature, projection }: { feature: any; projection: d3.GeoPro
     );
 };
 
-const GroundPlane = ({ bbox, projection }: { bbox: [number, number, number, number], projection: d3.GeoProjection }) => {
+const GroundPlane = ({ bbox, projection, elevationData }: { bbox: [number, number, number, number], projection: d3.GeoProjection, elevationData: ElevationData }) => {
     const [minLon, minLat, maxLon, maxLat] = bbox;
     const topLeft = projection([minLon, maxLat]);
     const bottomRight = projection([maxLon, minLat]);
@@ -99,6 +117,18 @@ const GroundPlane = ({ bbox, projection }: { bbox: [number, number, number, numb
     const width = bottomRight[0] - topLeft[0];
     const height = bottomRight[1] - topLeft[1];
 
+    const geometry = useMemo(() => {
+        const [gridWidth, gridHeight] = elevationData.gridSize;
+        const geom = new THREE.PlaneGeometry(width, height, gridWidth - 1, gridHeight - 1);
+        
+        const positions = geom.attributes.position.array;
+        for (let i = 0; i < elevationData.elevations.length; i++) {
+            positions[i * 3 + 2] = elevationData.elevations[i];
+        }
+        geom.computeVertexNormals();
+        return geom;
+    }, [width, height, elevationData]);
+
     // Esri World Imagery Export URL
     // size is width, height in pixels (1024x1024 for sharp texture)
     const imageUrl = `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export?bbox=${minLon},${minLat},${maxLon},${maxLat}&bboxSR=4326&imageSR=3857&size=1024,1024&format=jpg&f=image`;
@@ -107,14 +137,14 @@ const GroundPlane = ({ bbox, projection }: { bbox: [number, number, number, numb
     texture.colorSpace = THREE.SRGBColorSpace;
 
     return (
-        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]}>
-            <planeGeometry args={[width, height]} />
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]}>
+            <primitive object={geometry} attach="geometry" />
             <meshStandardMaterial map={texture} />
         </mesh>
     );
 };
 
-const Scene3D: React.FC<Scene3DProps> = ({ geoData, center, bbox }) => {
+const Scene3D: React.FC<Scene3DProps> = ({ geoData, center, bbox, elevationData }) => {
   // Use a pseudo-mercator projection tailored to our center point.
   // We scale it so 1 unit is roughly 1 meter.
   // Mercator scale factor at latitude: scale = R * cos(lat)
@@ -142,15 +172,15 @@ const Scene3D: React.FC<Scene3DProps> = ({ geoData, center, bbox }) => {
           <meshStandardMaterial color="#4caf50" />
         </mesh>
       }>
-        <GroundPlane bbox={bbox} projection={projection} />
+        <GroundPlane bbox={bbox} projection={projection} elevationData={elevationData} />
       </Suspense>
 
       <group>
         {geoData.buildings.features.map((feature, i) => (
-          <BuildingMesh key={`bldg-${i}`} feature={feature} projection={projection} />
+          <BuildingMesh key={`bldg-${i}`} feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} />
         ))}
         {geoData.highways.features.map((feature, i) => (
-          <RoadMesh key={`road-${i}`} feature={feature} projection={projection} />
+          <RoadMesh key={`road-${i}`} feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} />
         ))}
       </group>
 
