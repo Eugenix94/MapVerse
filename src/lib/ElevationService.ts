@@ -1,5 +1,3 @@
-import * as turf from '@turf/turf';
-
 export interface ElevationData {
   gridSize: [number, number]; // [width, height] usually [10, 10]
   elevations: number[]; // 1D array of normalized elevations, length gridSize[0] * gridSize[1]
