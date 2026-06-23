@@ -2,11 +2,10 @@ import { useState } from 'react';
 import ProjectSelectorMap from './components/ProjectSelectorMap';
 import EditorWorkspace from './components/EditorWorkspace';
 import { OverpassApiService } from './lib/OverpassApiService';
-import type { ExtractedGeoData } from './lib/OverpassApiService';
+import type { ExtractedGeoData, OsmCategory } from './lib/OverpassApiService';
 import { ElevationService } from './lib/ElevationService';
 import type { ElevationData } from './lib/ElevationService';
 import * as turf from '@turf/turf';
-import { Loader2 } from 'lucide-react';
 import './App.css';
 
 function App() {
@@ -14,15 +13,21 @@ function App() {
   const [projectBounds, setProjectBounds] = useState<GeoJSON.Feature<GeoJSON.Polygon> | null>(null);
   const [geoData, setGeoData] = useState<ExtractedGeoData | null>(null);
   const [elevationData, setElevationData] = useState<ElevationData | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const handlePolygonDrawn = async (polygon: GeoJSON.Feature<GeoJSON.Polygon>) => {
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  const handlePolygonDrawn = async (polygon: GeoJSON.Feature<GeoJSON.Polygon>, categories: OsmCategory[]) => {
     setProjectBounds(polygon);
     setMode('loading');
     
     try {
       const bbox = turf.bbox(polygon) as [number, number, number, number];
       const [data, elevData] = await Promise.all([
-        OverpassApiService.fetchFeaturesForPolygon(polygon),
+        OverpassApiService.fetchFeaturesForPolygon(polygon, categories),
         ElevationService.fetchElevationGrid(bbox)
       ]);
       setGeoData(data);
@@ -30,7 +35,7 @@ function App() {
       setMode('editing');
     } catch (error) {
       console.error("Failed to fetch data:", error);
-      alert("Failed to fetch data from Overpass API. See console for details.");
+      showToast("Failed to fetch data from Overpass API. See console for details.");
       setMode('selecting');
     }
   };
@@ -43,29 +48,38 @@ function App() {
   };
 
   return (
-    <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden' }}>
+    <div style={{ width: '100vw', height: '100dvh', margin: 0, padding: 0, overflow: 'hidden', position: 'relative' }}>
       {mode === 'selecting' && (
-        <ProjectSelectorMap onPolygonDrawn={handlePolygonDrawn} />
+        <div className="animate-fade-in" style={{ height: '100%' }}>
+          <ProjectSelectorMap onPolygonDrawn={handlePolygonDrawn} />
+        </div>
       )}
       
       {mode === 'loading' && (
-        <div style={{ 
-          display: 'flex', flexDirection: 'column', alignItems: 'center', 
-          justifyContent: 'center', height: '100%', backgroundColor: '#f5f5f5' 
-        }}>
-          <Loader2 size={64} color="#4caf50" className="spinner" />
-          <h2 style={{ marginTop: '20px', color: '#333', fontFamily: 'sans-serif' }}>Extracting Urban Data...</h2>
-          <p style={{ color: '#666', fontFamily: 'sans-serif' }}>Querying OpenStreetMap via Overpass API</p>
+        <div className="loading-container animate-fade-in">
+          <div className="loading-card glass-panel">
+            <div className="loading-spinner"></div>
+            <h2 className="loading-title">Extracting Urban Data</h2>
+            <p className="loading-subtitle">Querying OpenStreetMap & Elevation API...</p>
+          </div>
         </div>
       )}
 
       {mode === 'editing' && geoData && projectBounds && elevationData && (
-        <EditorWorkspace 
-          geoData={geoData} 
-          projectBounds={projectBounds} 
-          elevationData={elevationData}
-          onClose={handleCloseEditor} 
-        />
+        <div className="animate-fade-in" style={{ height: '100%' }}>
+          <EditorWorkspace 
+            geoData={geoData} 
+            projectBounds={projectBounds} 
+            elevationData={elevationData}
+            onClose={handleCloseEditor} 
+          />
+        </div>
+      )}
+
+      {toastMessage && (
+        <div className="toast-container">
+          <div className="toast">{toastMessage}</div>
+        </div>
       )}
     </div>
   );
