@@ -3,7 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Sky, useTexture, Line, Html, BakeShadows } from '@react-three/drei';
 import { Suspense } from 'react';
 import * as THREE from 'three';
-import type { ExtractedGeoData } from '../lib/OverpassApiService';
+import type { ExtractedGeoData, OsmCategory } from '../lib/OverpassApiService';
 import type { ElevationData } from '../lib/ElevationService';
 import { ElevationService } from '../lib/ElevationService';
 import * as d3 from 'd3-geo';
@@ -14,6 +14,7 @@ interface Scene3DProps {
   center: [number, number]; // [lon, lat]
   bbox: [number, number, number, number];
   elevationData: ElevationData;
+  visibleLayers: Set<OsmCategory>;
 }
 
 const BuildingMesh = ({ feature, projection, elevationData, bbox }: { feature: any; projection: d3.GeoProjection; elevationData: ElevationData; bbox: [number, number, number, number] }) => {
@@ -223,7 +224,7 @@ const GroundPlane = ({ bbox, projection, elevationData }: { bbox: [number, numbe
     );
 };
 
-const Scene3D: React.FC<Scene3DProps> = ({ geoData, center, bbox, elevationData }) => {
+const Scene3D: React.FC<Scene3DProps> = ({ geoData, center, bbox, elevationData, visibleLayers }) => {
   const projection = useMemo(() => {
     const scale = 6378137 / (2 * Math.PI) / Math.cos(center[1] * Math.PI / 180);
     return d3.geoMercator()
@@ -259,23 +260,23 @@ const Scene3D: React.FC<Scene3DProps> = ({ geoData, center, bbox, elevationData 
       </Suspense>
 
       <group>
-        {geoData.buildings.features.map((feature, i) => (
+        {visibleLayers.has('buildings') && geoData.buildings.features.map((feature, i) => (
           <BuildingMesh key={`bldg-${i}`} feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} />
         ))}
-        {geoData.highways.features.map((feature, i) => (
+        {visibleLayers.has('highways') && geoData.highways.features.map((feature, i) => (
           <GenericLineMesh key={`road-${i}`} feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} color="#00e5ff" lineWidth={2} />
         ))}
-        {geoData.cycleways.features.map((feature, i) => (
+        {visibleLayers.has('cycleways') && geoData.cycleways.features.map((feature, i) => (
           <GenericLineMesh key={`cycle-${i}`} feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} color="#00ff00" lineWidth={3} />
         ))}
-        {geoData.transport.features.map((feature, i) => (
+        {visibleLayers.has('transport') && geoData.transport.features.map((feature, i) => (
           <GenericLineMesh key={`trans-${i}`} feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} color="#ff9900" lineWidth={4} />
         ))}
-        {geoData.water.features.map((feature, i) => {
+        {visibleLayers.has('water') && geoData.water.features.map((feature, i) => {
            if (feature.geometry.type === 'LineString') return <GenericLineMesh key={`wline-${i}`} feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} color="#0077ff" lineWidth={5} />;
            return <FlatPolygonMesh key={`wpoly-${i}`} feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} color="#0077ff" heightOffset={0.3} />;
         })}
-        {geoData.nature.features.map((feature, i) => {
+        {visibleLayers.has('nature') && geoData.nature.features.map((feature, i) => {
            if (feature.geometry?.type === 'LineString') return null; // Only render polygons for nature
            return <FlatPolygonMesh key={`npoly-${i}`} feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} color="#2e7d32" heightOffset={0.2} />;
         })}

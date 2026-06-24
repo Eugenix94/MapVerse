@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import type { ExtractedGeoData } from '../lib/OverpassApiService';
+import type { ExtractedGeoData, OsmCategory } from '../lib/OverpassApiService';
 import type { ElevationData } from '../lib/ElevationService';
-import { MapContainer, TileLayer, GeoJSON } from 'react-leaflet';
+import { MapContainer, TileLayer, GeoJSON, LayersControl } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import Scene3D from './Scene3D';
 import * as turf from '@turf/turf';
@@ -14,84 +14,94 @@ interface EditorWorkspaceProps {
 }
 
 const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ geoData, projectBounds, elevationData, onClose }) => {
-  const [viewMode, setViewMode] = useState<'2d' | '3d'>('2d');
+  const [viewMode, setViewMode] = useState<'2d' | '3d'>('3d');
+  const [visibleLayers, setVisibleLayers] = useState<Set<OsmCategory>>(new Set(['buildings', 'highways', 'cycleways', 'transport', 'water', 'nature']));
 
   const bbox = turf.bbox(projectBounds);
   const centerLat = (bbox[1] + bbox[3]) / 2;
   const centerLon = (bbox[0] + bbox[2]) / 2;
 
-
+  const toggleLayer = (cat: OsmCategory) => {
+    const next = new Set(visibleLayers);
+    if (next.has(cat)) next.delete(cat);
+    else next.add(cat);
+    setVisibleLayers(next);
+  };
 
   return (
-    <div style={{ height: '100dvh', width: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div className="editor-toolbar glass-panel animate-slide-up">
-        <div className="toolbar-stats">
-          <span style={{ fontWeight: '600', fontSize: '1.1rem' }}>
-            Editor Workspace
-          </span>
-          <br/>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            {geoData.buildings.features.length} Buildings, {geoData.highways.features.length} Roads, {geoData.cycleways.features.length} Cycleways, {geoData.transport.features.length} Transport, {geoData.water.features.length} Water, {geoData.nature.features.length} Nature
-          </span>
+    <div className="app-layout">
+      <div className="app-sidebar animate-slide-up">
+        <h2 style={{ margin: '0 0 10px 0', fontSize: '1.4rem' }}>Workspace</h2>
+        
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+          <button onClick={onClose} className="btn btn-secondary" style={{ textAlign: 'center' }}>&larr; Back to Selection</button>
+          <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+            <button 
+              onClick={() => setViewMode('2d')} 
+              className={`btn ${viewMode === '2d' ? 'btn-active' : 'btn-secondary'}`}
+              style={{ flex: 1 }}
+            >
+              2D Editor
+            </button>
+            <button 
+              onClick={() => setViewMode('3d')}
+              className={`btn ${viewMode === '3d' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ flex: 1 }}
+            >
+              3D Preview
+            </button>
+          </div>
         </div>
-        <div className="toolbar-actions">
-          <button onClick={onClose} className="btn btn-secondary">&larr; Back</button>
-          <button 
-            onClick={() => setViewMode('2d')} 
-            className={`btn ${viewMode === '2d' ? 'btn-active' : 'btn-secondary'}`}
-          >
-            2D Editor
-          </button>
-          <button 
-            onClick={() => setViewMode('3d')}
-            className={`btn ${viewMode === '3d' ? 'btn-primary' : 'btn-secondary'}`}
-          >
-            3D Preview
-          </button>
+
+        <h3 style={{ margin: '10px 0 5px 0', fontSize: '1rem', borderBottom: '1px solid var(--glass-border)', paddingBottom: '5px' }}>Visible Layers</h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          {['buildings', 'highways', 'cycleways', 'transport', 'water', 'nature'].map((c) => {
+            const cat = c as OsmCategory;
+            const count = geoData[cat]?.features?.length || 0;
+            return (
+              <label key={cat} style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-color)' }}>
+                <input 
+                  type="checkbox" 
+                  checked={visibleLayers.has(cat)}
+                  onChange={() => toggleLayer(cat)}
+                  style={{ marginRight: '8px', cursor: 'pointer' }}
+                />
+                <span style={{ textTransform: 'capitalize', flex: 1 }}>{cat}</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>{count}</span>
+              </label>
+            );
+          })}
         </div>
       </div>
 
-      <div style={{ flex: 1, position: 'relative' }}>
+      <div className="app-main">
         {viewMode === '2d' ? (
           <MapContainer 
             center={[centerLat, centerLon]} 
             zoom={17} 
             style={{ height: '100%', width: '100%', zIndex: 1 }}
           >
-            <TileLayer
-              url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-              attribution='Tiles &copy; Esri'
-            />
-            {/* Render Water */}
-            <GeoJSON 
-              data={geoData.water} 
-              style={{ color: '#0077ff', weight: 2, fillColor: '#0077ff', fillOpacity: 0.5 }} 
-            />
-            {/* Render Nature */}
-            <GeoJSON 
-              data={geoData.nature} 
-              style={{ color: '#2e7d32', weight: 2, fillColor: '#2e7d32', fillOpacity: 0.5 }} 
-            />
-            {/* Render Transport */}
-            <GeoJSON 
-              data={geoData.transport} 
-              style={{ color: '#ff9900', weight: 4 }} 
-            />
-            {/* Render Cycleways */}
-            <GeoJSON 
-              data={geoData.cycleways} 
-              style={{ color: '#00ff00', weight: 4 }} 
-            />
-            {/* Render HighWays (Roads) */}
-            <GeoJSON 
-              data={geoData.highways} 
-              style={{ color: '#ffeb3b', weight: 4 }} 
-            />
-            {/* Render Buildings */}
-            <GeoJSON 
-              data={geoData.buildings} 
-              style={{ color: '#f44336', weight: 1, fillColor: '#f44336', fillOpacity: 0.5 }} 
-            />
+            <LayersControl position="topright">
+              <LayersControl.BaseLayer checked name="Satellite">
+                <TileLayer
+                  url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                  attribution='Tiles &copy; Esri'
+                />
+              </LayersControl.BaseLayer>
+              <LayersControl.BaseLayer name="OpenStreetMap">
+                <TileLayer
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  attribution='&copy; OpenStreetMap contributors'
+                />
+              </LayersControl.BaseLayer>
+            </LayersControl>
+
+            {visibleLayers.has('water') && <GeoJSON data={geoData.water} style={{ color: '#0077ff', weight: 2, fillColor: '#0077ff', fillOpacity: 0.5 }} />}
+            {visibleLayers.has('nature') && <GeoJSON data={geoData.nature} style={{ color: '#2e7d32', weight: 2, fillColor: '#2e7d32', fillOpacity: 0.5 }} />}
+            {visibleLayers.has('transport') && <GeoJSON data={geoData.transport} style={{ color: '#ff9900', weight: 4 }} />}
+            {visibleLayers.has('cycleways') && <GeoJSON data={geoData.cycleways} style={{ color: '#00ff00', weight: 4 }} />}
+            {visibleLayers.has('highways') && <GeoJSON data={geoData.highways} style={{ color: '#ffeb3b', weight: 4 }} />}
+            {visibleLayers.has('buildings') && <GeoJSON data={geoData.buildings} style={{ color: '#f44336', weight: 1, fillColor: '#f44336', fillOpacity: 0.5 }} />}
           </MapContainer>
         ) : (
           <Scene3D 
@@ -99,6 +109,7 @@ const EditorWorkspace: React.FC<EditorWorkspaceProps> = ({ geoData, projectBound
             center={[centerLon, centerLat]} 
             bbox={bbox as [number, number, number, number]} 
             elevationData={elevationData}
+            visibleLayers={visibleLayers}
           />
         )}
       </div>
