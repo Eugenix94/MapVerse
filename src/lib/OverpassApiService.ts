@@ -52,18 +52,39 @@ export class OverpassApiService {
       out skel qt;
     `;
     
-    const url = `https://overpass-api.de/api/interpreter`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
-      },
-      body: `data=${encodeURIComponent(query)}`
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Overpass API error: ${response.statusText}`);
+    const endpoints = [
+      'https://overpass-api.de/api/interpreter',
+      'https://lz4.overpass-api.de/api/interpreter',
+      'https://z.overpass-api.de/api/interpreter',
+      'https://overpass.kumi.systems/api/interpreter'
+    ];
+
+    let response: Response | null = null;
+    let lastError: Error | null = null;
+
+    for (const url of endpoints) {
+      try {
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: `data=${encodeURIComponent(query)}`
+        });
+        
+        if (response.ok) {
+          break; // Success!
+        } else {
+          lastError = new Error(`Overpass API error on ${url}: ${response.status} ${response.statusText}`);
+        }
+      } catch (err: any) {
+        lastError = err;
+        console.warn(`Failed to fetch from ${url}, trying next...`, err);
+      }
+    }
+
+    if (!response || !response.ok) {
+      throw lastError || new Error('All Overpass API endpoints failed');
     }
     
     const osmData = await response.json();
