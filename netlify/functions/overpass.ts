@@ -13,12 +13,18 @@ const handler: Handler = async (event: HandlerEvent) => {
     return { statusCode: 405, body: "Method Not Allowed" };
   }
 
-  const body = event.body || "";
+  let body = event.body || "";
+  if (event.isBase64Encoded) {
+    body = Buffer.from(body, "base64").toString("utf-8");
+  }
 
   let lastError: string = "";
 
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12-second timeout per mirror
+      
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
@@ -26,7 +32,9 @@ const handler: Handler = async (event: HandlerEvent) => {
           "User-Agent": "MapVerse/1.0 (https://mapverse0.netlify.app)",
         },
         body,
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
 
       if (response.ok) {
         const data = await response.text();
