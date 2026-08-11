@@ -18,18 +18,19 @@ const handler: Handler = async (event: HandlerEvent) => {
     body = Buffer.from(body, "base64").toString("utf-8");
   }
 
-  let lastError: string = "";
+  let errors: string[] = [];
 
   for (const endpoint of OVERPASS_ENDPOINTS) {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000); // 12-second timeout per mirror
+      const timeoutId = setTimeout(() => controller.abort(), 7000); // 7 seconds so we can try at least one other before 10s limit
       
       const response = await fetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
-          "User-Agent": "MapVerse/1.0 (https://mapverse0.netlify.app)",
+          "User-Agent": "MapVerseProxy/1.0",
+          "Accept": "*/*",
         },
         body,
         signal: controller.signal
@@ -47,18 +48,21 @@ const handler: Handler = async (event: HandlerEvent) => {
           body: data,
         };
       } else {
-        lastError = `${endpoint}: ${response.status} ${response.statusText}`;
-        console.warn(`Overpass endpoint failed: ${lastError}`);
+        const errText = await response.text();
+        const errStr = `${endpoint}: ${response.status} ${response.statusText} - ${errText.substring(0, 100)}`;
+        errors.push(errStr);
+        console.warn(`Overpass endpoint failed: ${errStr}`);
       }
     } catch (err: any) {
-      lastError = `${endpoint}: ${err.message}`;
-      console.warn(`Overpass endpoint error: ${lastError}`);
+      const errStr = `${endpoint}: ${err.message}`;
+      errors.push(errStr);
+      console.warn(`Overpass endpoint error: ${errStr}`);
     }
   }
 
   return {
     statusCode: 502,
-    body: JSON.stringify({ error: "All Overpass API endpoints failed", lastError }),
+    body: JSON.stringify({ error: "All Overpass API endpoints failed", details: errors }),
   };
 };
 

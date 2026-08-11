@@ -14,7 +14,8 @@ const handler: Handler = async (event: HandlerEvent) => {
     const url = `https://api.opentopodata.org/v1/srtm30m?locations=${encodeURIComponent(locations)}`;
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "MapVerse/1.0 (https://mapverse0.netlify.app)",
+        "User-Agent": "MapVerseProxy/1.0",
+        "Accept": "*/*",
       },
     });
 
