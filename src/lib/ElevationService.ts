@@ -32,31 +32,40 @@ export class ElevationService {
     const locationsString = points.map(p => `${p.lat},${p.lon}`).join('|');
     const url = `https://api.opentopodata.org/v1/srtm30m?locations=${encodeURIComponent(locationsString)}`;
     
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      throw new Error(`OpenTopoData API error: ${response.statusText}`);
+    try {
+      const response = await fetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`OpenTopoData API error: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      if (!data.results || data.results.length !== points.length) {
+        throw new Error('Invalid response from OpenTopoData API');
+      }
+      
+      // Extract raw elevations. Sometimes elevation can be null if over ocean.
+      const rawElevations = data.results.map((r: any) => (r.elevation !== null ? r.elevation : 0));
+      
+      // Calculate min elevation for normalization
+      const minElevation = Math.min(...rawElevations);
+      
+      // Normalize elevations
+      const normalizedElevations = rawElevations.map((e: number) => e - minElevation);
+      
+      return {
+        gridSize: [gridWidth, gridHeight],
+        elevations: normalizedElevations,
+        minElevation
+      };
+    } catch (error) {
+      console.warn("Elevation fetch failed, falling back to flat ground:", error);
+      return {
+        gridSize: [gridWidth, gridHeight],
+        elevations: new Array(gridWidth * gridHeight).fill(0),
+        minElevation: 0
+      };
     }
-    
-    const data = await response.json();
-    if (!data.results || data.results.length !== points.length) {
-      throw new Error('Invalid response from OpenTopoData API');
-    }
-    
-    // Extract raw elevations. Sometimes elevation can be null if over ocean.
-    const rawElevations = data.results.map((r: any) => (r.elevation !== null ? r.elevation : 0));
-    
-    // Calculate min elevation for normalization
-    const minElevation = Math.min(...rawElevations);
-    
-    // Normalize elevations
-    const normalizedElevations = rawElevations.map((e: number) => e - minElevation);
-    
-    return {
-      gridSize: [gridWidth, gridHeight],
-      elevations: normalizedElevations,
-      minElevation
-    };
   }
 
   /**
