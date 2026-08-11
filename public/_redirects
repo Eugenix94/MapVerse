@@ -1,2 +1,6 @@
-/api/elevation  https://api.opentopodata.org/v1/srtm30m  200
-/* /index.html 200
+/api/overpass-primary  https://overpass-api.de/api/interpreter  200!
+/api/overpass-lz4      https://lz4.overpass-api.de/api/interpreter  200!
+/api/overpass-z        https://z.overpass-api.de/api/interpreter  200!
+/api/overpass-kumi     https://overpass.kumi.systems/api/interpreter  200!
+/api/elevation         https://api.opentopodata.org/v1/srtm30m  200!
+/*                     /index.html  200

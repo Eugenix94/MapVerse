@@ -53,6 +53,10 @@ export class OverpassApiService {
     `;
     
     const endpoints = [
+      '/api/overpass-primary',
+      '/api/overpass-lz4',
+      '/api/overpass-z',
+      '/api/overpass-kumi',
       'https://overpass-api.de/api/interpreter',
       'https://lz4.overpass-api.de/api/interpreter',
       'https://z.overpass-api.de/api/interpreter',

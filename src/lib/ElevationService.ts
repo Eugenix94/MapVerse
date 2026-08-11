@@ -30,7 +30,7 @@ export class ElevationService {
     
     // Format for API: lat,lng|lat,lng...
     const locationsString = points.map(p => `${p.lat},${p.lon}`).join('|');
-    const url = `https://api.opentopodata.org/v1/srtm30m?locations=${encodeURIComponent(locationsString)}`;
+    const url = `/api/elevation?locations=${encodeURIComponent(locationsString)}`;
     
     try {
       const response = await fetch(url);
