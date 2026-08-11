@@ -64,12 +64,12 @@ export class OverpassApiService {
 
     for (const url of endpoints) {
       try {
-        const fullUrl = `${url}?data=${encodeURIComponent(query)}`;
-        response = await fetch(fullUrl, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json'
-          }
+        const formData = new URLSearchParams();
+        formData.append('data', query);
+        
+        response = await fetch(url, {
+          method: 'POST',
+          body: formData
         });
         
         if (response.ok) {
