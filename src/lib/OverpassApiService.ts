@@ -52,43 +52,17 @@ export class OverpassApiService {
       out skel qt;
     `;
     
-    const endpoints = [
-      '/api/overpass-primary',
-      '/api/overpass-lz4',
-      '/api/overpass-z',
-      '/api/overpass-kumi',
-      'https://overpass-api.de/api/interpreter',
-      'https://lz4.overpass-api.de/api/interpreter',
-      'https://z.overpass-api.de/api/interpreter',
-      'https://overpass.kumi.systems/api/interpreter'
-    ];
+    const formData = new URLSearchParams();
+    formData.append('data', query);
 
-    let response: Response | null = null;
-    let lastError: Error | null = null;
+    const response = await fetch('/.netlify/functions/overpass', {
+      method: 'POST',
+      body: formData
+    });
 
-    for (const url of endpoints) {
-      try {
-        const formData = new URLSearchParams();
-        formData.append('data', query);
-        
-        response = await fetch(url, {
-          method: 'POST',
-          body: formData
-        });
-        
-        if (response.ok) {
-          break; // Success!
-        } else {
-          lastError = new Error(`Overpass API error on ${url}: ${response.status} ${response.statusText}`);
-        }
-      } catch (err: any) {
-        lastError = err;
-        console.warn(`Failed to fetch from ${url}, trying next...`, err);
-      }
-    }
-
-    if (!response || !response.ok) {
-      throw lastError || new Error('All Overpass API endpoints failed');
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Overpass API proxy error: ${response.status} - ${errorText}`);
     }
     
     const osmData = await response.json();

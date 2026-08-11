@@ -30,7 +30,7 @@ export class ElevationService {
     
     // Format for API: lat,lng|lat,lng...
     const locationsString = points.map(p => `${p.lat},${p.lon}`).join('|');
-    const url = `/api/elevation?locations=${encodeURIComponent(locationsString)}`;
+    const url = `/.netlify/functions/elevation?locations=${encodeURIComponent(locationsString)}`;
     
     try {
       const response = await fetch(url);
