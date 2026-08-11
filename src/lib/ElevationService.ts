@@ -30,16 +30,9 @@ export class ElevationService {
     
     // Format for API: lat,lng|lat,lng...
     const locationsString = points.map(p => `${p.lat},${p.lon}`).join('|');
-    // We use a local Vite proxy to avoid CORS issues. See vite.config.ts.
-    const url = `/api/elevation`;
+    const url = `https://api.opentopodata.org/v1/srtm30m?locations=${encodeURIComponent(locationsString)}`;
     
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded'
-      },
-      body: `locations=${encodeURIComponent(locationsString)}`
-    });
+    const response = await fetch(url);
     
     if (!response.ok) {
       throw new Error(`OpenTopoData API error: ${response.statusText}`);

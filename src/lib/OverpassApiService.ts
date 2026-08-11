@@ -1,7 +1,7 @@
 import osmtogeojson from 'osmtogeojson';
 import * as turf from '@turf/turf';
 
-export type OsmCategory = 'buildings' | 'highways' | 'cycleways' | 'transport' | 'water' | 'nature';
+export type OsmCategory = 'buildings' | 'highways' | 'cycleways' | 'transport' | 'water' | 'nature' | 'schools' | 'bus_stops';
 
 export interface ExtractedGeoData {
   buildings: GeoJSON.FeatureCollection;
@@ -10,6 +10,8 @@ export interface ExtractedGeoData {
   transport: GeoJSON.FeatureCollection;
   water: GeoJSON.FeatureCollection;
   nature: GeoJSON.FeatureCollection;
+  schools: GeoJSON.FeatureCollection;
+  bus_stops: GeoJSON.FeatureCollection;
 }
 
 export class OverpassApiService {
@@ -31,7 +33,9 @@ export class OverpassApiService {
       cycleways: `way["highway"="cycleway"](${minLat},${minLon},${maxLat},${maxLon}); way["cycleway"](${minLat},${minLon},${maxLat},${maxLon});`,
       transport: `way["railway"](${minLat},${minLon},${maxLat},${maxLon}); node["public_transport"](${minLat},${minLon},${maxLat},${maxLon});`,
       water: `way["natural"="water"](${minLat},${minLon},${maxLat},${maxLon}); way["waterway"](${minLat},${minLon},${maxLat},${maxLon}); relation["natural"="water"](${minLat},${minLon},${maxLat},${maxLon});`,
-      nature: `way["leisure"="park"](${minLat},${minLon},${maxLat},${maxLon}); way["natural"="wood"](${minLat},${minLon},${maxLat},${maxLon}); relation["leisure"="park"](${minLat},${minLon},${maxLat},${maxLon});`
+      nature: `way["leisure"="park"](${minLat},${minLon},${maxLat},${maxLon}); way["natural"="wood"](${minLat},${minLon},${maxLat},${maxLon}); relation["leisure"="park"](${minLat},${minLon},${maxLat},${maxLon});`,
+      schools: `node["amenity"="school"](${minLat},${minLon},${maxLat},${maxLon}); way["amenity"="school"](${minLat},${minLon},${maxLat},${maxLon}); relation["amenity"="school"](${minLat},${minLon},${maxLat},${maxLon}); way["building"="school"](${minLat},${minLon},${maxLat},${maxLon}); relation["building"="school"](${minLat},${minLon},${maxLat},${maxLon});`,
+      bus_stops: `node["highway"="bus_stop"](${minLat},${minLon},${maxLat},${maxLon}); node["amenity"="bus_station"](${minLat},${minLon},${maxLat},${maxLon}); way["amenity"="bus_station"](${minLat},${minLon},${maxLat},${maxLon}); relation["amenity"="bus_station"](${minLat},${minLon},${maxLat},${maxLon}); node["public_transport"="platform"]["bus"="yes"](${minLat},${minLon},${maxLat},${maxLon}); node["public_transport"="stop_position"]["bus"="yes"](${minLat},${minLon},${maxLat},${maxLon});`
     };
 
     let queryStatements = '';
@@ -65,7 +69,11 @@ export class OverpassApiService {
     const osmData = await response.json();
     
     // Convert Overpass JSON to GeoJSON
-    const geojsonData = osmtogeojson(osmData) as GeoJSON.FeatureCollection;
+    let parseOsmtogeojson = osmtogeojson;
+    if (typeof parseOsmtogeojson !== 'function' && typeof (parseOsmtogeojson as any).default === 'function') {
+      parseOsmtogeojson = (parseOsmtogeojson as any).default;
+    }
+    const geojsonData = (parseOsmtogeojson as Function)(osmData) as GeoJSON.FeatureCollection;
     
     const result: ExtractedGeoData = {
       buildings: turf.featureCollection([]),
@@ -73,14 +81,20 @@ export class OverpassApiService {
       cycleways: turf.featureCollection([]),
       transport: turf.featureCollection([]),
       water: turf.featureCollection([]),
-      nature: turf.featureCollection([])
+      nature: turf.featureCollection([]),
+      schools: turf.featureCollection([]),
+      bus_stops: turf.featureCollection([])
     };
     
     geojsonData.features.forEach(feature => {
       const p = feature.properties || {};
       
       // Categorize exclusively into the first matching category selected
-      if (categories.includes('buildings') && p.building) {
+      if (categories.includes('schools') && (p.amenity === 'school' || p.building === 'school')) {
+        result.schools.features.push(feature);
+      } else if (categories.includes('bus_stops') && (p.highway === 'bus_stop' || p.amenity === 'bus_station' || (p.public_transport && p.bus === 'yes'))) {
+        result.bus_stops.features.push(feature);
+      } else if (categories.includes('buildings') && p.building) {
         result.buildings.features.push(feature);
       } else if (categories.includes('cycleways') && (p.highway === 'cycleway' || p.cycleway)) {
         result.cycleways.features.push(feature);
@@ -98,3 +112,25 @@ export class OverpassApiService {
     return result;
   }
 }
+
+export const isSpecialBuilding = (feature: any): boolean => {
+  if (!feature || !feature.properties) return false;
+  const p = feature.properties;
+  
+  // If it has a specific name or operator tag, it's special
+  if (p.name || p.operator || p['addr:housename']) return true;
+  
+  // List of generic building types
+  const genericTypes = ['yes', 'house', 'residential', 'apartments', 'garage', 'garages', 'shed', 'terrace', 'detached', 'static_caravan', 'cabin', 'roof', 'service', 'building'];
+  const buildingType = p.building ? String(p.building).toLowerCase().trim() : '';
+  if (buildingType && !genericTypes.includes(buildingType)) {
+    return true;
+  }
+  
+  // If it has amenity, historic, tourism, or landmark tags, it is special
+  if (p.amenity || p.historic || p.tourism || p.office || p.government || p.shop || p.craft || p.leisure || p.religion || p.healthcare || p.sport || p.public_building || p.diplomatic) {
+    return true;
+  }
+  
+  return false;
+};

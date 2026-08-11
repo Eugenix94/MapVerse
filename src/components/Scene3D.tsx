@@ -4,6 +4,7 @@ import { OrbitControls, Sky, useTexture, Line, Html, BakeShadows } from '@react-
 import { Suspense } from 'react';
 import * as THREE from 'three';
 import type { ExtractedGeoData, OsmCategory } from '../lib/OverpassApiService';
+import { isSpecialBuilding } from '../lib/OverpassApiService';
 import type { ElevationData } from '../lib/ElevationService';
 import { ElevationService } from '../lib/ElevationService';
 import * as d3 from 'd3-geo';
@@ -78,43 +79,60 @@ const BuildingMesh = ({ feature, projection, elevationData, bbox }: { feature: a
 
   }, [feature, projection, center]);
 
+  const isSpecial = useMemo(() => isSpecialBuilding(feature), [feature]);
+
   const color = useMemo(() => {
-    // Subtle color variation based on height
+    if (isSpecial) {
+      return new THREE.Color('#ffc107');
+    }
+    // Subtle gray variation based on height
     const v = Math.min(255, 150 + height * 1.5);
     return new THREE.Color(`rgb(${Math.floor(v)}, ${Math.floor(v)}, ${Math.floor(v)})`);
-  }, [height]);
+  }, [isSpecial, height]);
 
   if (!geometry) return null;
 
   return (
-    <mesh 
-      geometry={geometry} 
-      position={[0, baseElevation, 0]} 
-      castShadow 
-      receiveShadow
-      onPointerOver={(e) => { e.stopPropagation(); setHovered(true); }}
-      onPointerOut={() => setHovered(false)}
-    >
-      <meshStandardMaterial 
-        color={hovered ? '#4caf50' : color} 
-        roughness={0.7} 
-        metalness={0.2}
-        emissive={hovered ? '#2e7d32' : '#000000'}
-      />
-      <lineSegments>
-        <edgesGeometry args={[geometry]} />
-        <lineBasicMaterial color={hovered ? '#ffffff' : '#444444'} linewidth={1} />
-      </lineSegments>
-      {hovered && (
-        <Html position={projectedCenter as [number, number, number]} center zIndexRange={[100, 0]}>
-          <div className="glass-panel" style={{ padding: '8px 12px', color: 'white', whiteSpace: 'nowrap', fontSize: '13px', pointerEvents: 'none' }}>
-            <strong style={{ color: '#4caf50' }}>{feature.properties?.name || 'Building'}</strong><br/>
-            <span style={{ color: '#ccc' }}>Height: {height}m</span><br/>
-            <span style={{ color: '#ccc' }}>Levels: {levels}</span>
-          </div>
-        </Html>
+    <group>
+      <mesh 
+        geometry={geometry} 
+        position={[0, baseElevation, 0]} 
+        castShadow 
+        receiveShadow
+        onPointerOver={(e) => { e.stopPropagation(); setHovered(true); }}
+        onPointerOut={() => setHovered(false)}
+      >
+        <meshStandardMaterial 
+          color={hovered ? '#4caf50' : color} 
+          roughness={isSpecial ? 0.25 : 0.7} 
+          metalness={isSpecial ? 0.5 : 0.2}
+          emissive={hovered ? '#2e7d32' : (isSpecial ? '#ff8f00' : '#000000')}
+          emissiveIntensity={isSpecial ? 0.4 : 1}
+        />
+        <lineSegments>
+          <edgesGeometry args={[geometry]} />
+          <lineBasicMaterial color={hovered ? '#ffffff' : (isSpecial ? '#ffff00' : '#444444')} linewidth={isSpecial ? 2 : 1} />
+        </lineSegments>
+        {hovered && (
+          <Html position={projectedCenter as [number, number, number]} center zIndexRange={[100, 0]}>
+            <div className="glass-panel" style={{ padding: '8px 12px', color: 'white', whiteSpace: 'nowrap', fontSize: '13px', pointerEvents: 'none', border: isSpecial ? '1px solid #ffd600' : undefined }}>
+              <strong style={{ color: isSpecial ? '#ffd600' : '#4caf50' }}>
+                {isSpecial && '⭐ '}
+                {feature.properties?.name || feature.properties?.operator || (feature.properties?.building && feature.properties.building !== 'yes' ? `Building: ${feature.properties.building}` : 'Special Building')}
+              </strong><br/>
+              <span style={{ color: '#ccc' }}>Height: {height}m</span><br/>
+              <span style={{ color: '#ccc' }}>Levels: {levels}</span>
+            </div>
+          </Html>
+        )}
+      </mesh>
+      {isSpecial && projectedCenter && (
+        <mesh position={[projectedCenter[0], baseElevation + height + 6, projectedCenter[2]]} castShadow>
+          <octahedronGeometry args={[3.5, 0]} />
+          <meshStandardMaterial color="#ffd600" emissive="#ff8f00" emissiveIntensity={0.8} roughness={0.1} metalness={0.9} />
+        </mesh>
       )}
-    </mesh>
+    </group>
   );
 };
 
@@ -224,6 +242,80 @@ const GroundPlane = ({ bbox, projection, elevationData }: { bbox: [number, numbe
     );
 };
 
+const SchoolMarker3D = ({ feature, projection, elevationData, bbox }: { feature: any; projection: d3.GeoProjection; elevationData: ElevationData; bbox: [number, number, number, number] }) => {
+  const center = useMemo(() => {
+    try {
+      if (feature.geometry?.type === 'Point') {
+        return feature.geometry.coordinates as [number, number];
+      }
+      const centerPoint = turf.center(feature);
+      return centerPoint.geometry.coordinates as [number, number];
+    } catch (e) {
+      return [0, 0] as [number, number];
+    }
+  }, [feature]);
+
+  const projected = projection(center);
+  const baseElevation = useMemo(() => {
+    return ElevationService.getInterpolatedElevation(center[0], center[1], bbox, elevationData);
+  }, [center, bbox, elevationData]);
+
+  if (!projected) return null;
+
+  return (
+    <group position={[projected[0], baseElevation, -projected[1]]}>
+      {(feature.geometry?.type === 'Polygon' || feature.geometry?.type === 'MultiPolygon') && (
+        <BuildingMesh feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} />
+      )}
+      <mesh position={[0, 15, 0]}>
+        <cylinderGeometry args={[2, 0.5, 30, 16]} />
+        <meshStandardMaterial color="#ff1744" roughness={0.3} emissive="#ff1744" emissiveIntensity={0.5} />
+      </mesh>
+      <mesh position={[0, 32, 0]}>
+        <sphereGeometry args={[4, 16, 16]} />
+        <meshStandardMaterial color="#ff1744" roughness={0.2} emissive="#ff1744" emissiveIntensity={0.8} />
+      </mesh>
+    </group>
+  );
+};
+
+const BusStopMarker3D = ({ feature, projection, elevationData, bbox }: { feature: any; projection: d3.GeoProjection; elevationData: ElevationData; bbox: [number, number, number, number] }) => {
+  const center = useMemo(() => {
+    try {
+      if (feature.geometry?.type === 'Point') {
+        return feature.geometry.coordinates as [number, number];
+      }
+      const centerPoint = turf.center(feature);
+      return centerPoint.geometry.coordinates as [number, number];
+    } catch (e) {
+      return [0, 0] as [number, number];
+    }
+  }, [feature]);
+
+  const projected = projection(center);
+  const baseElevation = useMemo(() => {
+    return ElevationService.getInterpolatedElevation(center[0], center[1], bbox, elevationData);
+  }, [center, bbox, elevationData]);
+
+  if (!projected) return null;
+
+  return (
+    <group position={[projected[0], baseElevation, -projected[1]]}>
+      {(feature.geometry?.type === 'Polygon' || feature.geometry?.type === 'MultiPolygon') && (
+        <BuildingMesh feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} />
+      )}
+      <mesh position={[0, 8, 0]}>
+        <cylinderGeometry args={[1, 0.4, 16, 12]} />
+        <meshStandardMaterial color="#9c27b0" roughness={0.3} emissive="#9c27b0" emissiveIntensity={0.5} />
+      </mesh>
+      <mesh position={[0, 18, 0]}>
+        <sphereGeometry args={[2.5, 16, 16]} />
+        <meshStandardMaterial color="#9c27b0" roughness={0.2} emissive="#9c27b0" emissiveIntensity={0.8} />
+      </mesh>
+    </group>
+  );
+};
+
 const Scene3D: React.FC<Scene3DProps> = ({ geoData, center, bbox, elevationData, visibleLayers }) => {
   const projection = useMemo(() => {
     const scale = 6378137 / (2 * Math.PI) / Math.cos(center[1] * Math.PI / 180);
@@ -262,6 +354,12 @@ const Scene3D: React.FC<Scene3DProps> = ({ geoData, center, bbox, elevationData,
       <group>
         {visibleLayers.has('buildings') && geoData.buildings.features.map((feature, i) => (
           <BuildingMesh key={`bldg-${i}`} feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} />
+        ))}
+        {visibleLayers.has('schools') && geoData.schools?.features?.map((feature, i) => (
+          <SchoolMarker3D key={`school-${i}`} feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} />
+        ))}
+        {visibleLayers.has('bus_stops') && geoData.bus_stops?.features?.map((feature, i) => (
+          <BusStopMarker3D key={`bus-${i}`} feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} />
         ))}
         {visibleLayers.has('highways') && geoData.highways.features.map((feature, i) => (
           <GenericLineMesh key={`road-${i}`} feature={feature} projection={projection} elevationData={elevationData} bbox={bbox} color="#00e5ff" lineWidth={2} />
